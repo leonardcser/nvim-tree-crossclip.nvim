@@ -1,0 +1,85 @@
+*nvim-tree-crossclip.txt*      Cross-session clipboard for nvim-tree       *nvim-tree-crossclip*
+
+Author:  you                                         *nvim-tree-crossclip-author*
+License: MIT
+
+===============================================================================
+INTRODUCTION                                                     *crossclip-intro*
+
+`nvim-tree-crossclip` adds a persistent copy/cut clipboard for
+|nvim-tree|. Selections are written to `${stdpath('state')}/nvim_tree_clipboard.json`
+so you can paste across sessions.
+
+Features~
+- Toggle copy/cut for files and directories
+- Persist clipboard across sessions
+- Paste into the directory under the cursor
+- Clear used clipboard automatically after paste
+
+Requirements~
+- Neovim 0.9+
+- |nvim-tree|
+
+===============================================================================
+USAGE                                                          *crossclip-usage*
+
+Map functions in |nvim-tree.on_attach| (example uses `c`, `x`, `p`):>
+  local function on_attach(bufnr)
+    local clip = require('nvim-tree-crossclip')
+    vim.keymap.set('n', 'c', clip.copy_toggle, { buffer = bufnr, desc = 'CrossClip: toggle copy' })
+    vim.keymap.set('n', 'x', clip.cut_toggle,  { buffer = bufnr, desc = 'CrossClip: toggle cut' })
+    vim.keymap.set('n', 'p', clip.paste,       { buffer = bufnr, desc = 'CrossClip: paste' })
+  end
+
+  require('nvim-tree').setup({ on_attach = on_attach })
+<
+
+After installation, generate helptags:>
+  :helptags ALL
+  :h nvim-tree-crossclip
+<
+
+===============================================================================
+API                                                             *crossclip-api*
+
+`require('nvim-tree-crossclip').setup()`
+`require('nvim-tree-crossclip').copy_toggle()`
+`require('nvim-tree-crossclip').cut_toggle()`
+`require('nvim-tree-crossclip').paste()`
+
+===============================================================================
+DETAILS                                                      *crossclip-details*
+
+Storage file~
+- `${stdpath('state')}/nvim_tree_clipboard.json`
+- Structure: `{ copy = {paths...}, cut = {paths...}, ts = <unix> }`
+
+Behavior~
+- Copy uses `cp -R -n` (no overwrite). Cut uses `mv`.
+- After a paste, the used list (`copy` or `cut`) is cleared.
+- A FS watcher updates state when the file changes.
+- On `VimLeavePre`, session-only entries are removed and file rewritten.
+
+Errors~
+- Displayed with |vim.notify()| and do not interrupt the editor.
+
+===============================================================================
+LICENSE                                                     *crossclip-license*
+
+MIT
+
+===============================================================================
+INDEX                                                         *crossclip-index*
+
+- *nvim-tree-crossclip*
+- *crossclip-intro*
+- *crossclip-install*
+- *crossclip-usage*
+- *crossclip-api*
+- *crossclip-details*
+- *crossclip-changelog*
+- *crossclip-license*
+
+===============================================================================
+
+vim:tw=78:ts=8:ft=help:norl:
