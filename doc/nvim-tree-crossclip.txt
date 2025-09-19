@@ -47,11 +47,40 @@ API                                                             *crossclip-api*
 `require('nvim-tree-crossclip').cut_toggle()`
 `require('nvim-tree-crossclip').paste()`
 
+Commands~                                                         *crossclip-cmds*
+  :NvimTreeCrossClip       Show current external clipboard contents
+  :NvimTreeCrossClipClear  Clear the external clipboard and nvim-tree marks
+
 ===============================================================================
+CONFIG                                                      *crossclip-config*
+
+Options~
+> 
+  require('nvim-tree-crossclip').setup({
+    persistent_clipboard = true,
+    clipboard_path = vim.fn.stdpath('state') .. '/nvim_tree_crossclip_clipboard.json',
+  })
+<
+
+- `persistent_clipboard` (boolean, default: `true`)
+  - When `true`, selections persist across sessions and decorations are restored on tree render.
+  - When `false`, session selections are removed on exit and no decorations are restored.
+
+- `clipboard_path` (string, default: `${stdpath('state')}/nvim_tree_crossclip_clipboard.json`)
+  - Path to the JSON file used for the external clipboard. Allows per-project or custom locations.
+
 DETAILS                                                      *crossclip-details*
+Styling~
+CrossClip defines these highlight groups for its floating window and border:>
+  hi NvimTreeCrossClipWindow guibg=NONE
+  hi NvimTreeCrossClipBorder guibg=NONE
+  hi NvimTreeCrossClipTitle  guifg=#ffffff guibg=NONE gui=bold
+<
+These are applied via |winhl| on the CrossClip window. The title is set with
+`FloatTitle:NvimTreeCrossClipTitle`. |winblend| is set to 0 to avoid opacity.
 
 Storage file~
-- `${stdpath('state')}/nvim_tree_clipboard.json`
+- `${stdpath('state')}/nvim_tree_crossclip_clipboard.json` (configurable via |crossclip-config|)
 - Structure: `{ copy = {paths...}, cut = {paths...}, ts = <unix> }`
 
 Behavior~

@@ -28,7 +28,9 @@ mirrors its clipboard while providing a shared, external clipboard file.
   dependencies = "nvim-tree/nvim-tree.lua",
 	name = "nvim-tree-crossclip",
   config = function()
-    require("nvim-tree-crossclip").setup()
+    require("nvim-tree-crossclip").setup({
+      persistent_clipboard = true, -- set to false to clear clipboard on exit and skip decoration restore
+    })
   end,
 }
 ```
@@ -41,7 +43,9 @@ use {
   requires = "nvim-tree/nvim-tree.lua",
 	name = "nvim-tree-crossclip",
   config = function()
-    require("nvim-tree-crossclip").setup()
+    require("nvim-tree-crossclip").setup({
+      persistent_clipboard = true, -- set to false to clear clipboard on exit and skip decoration restore
+    })
   end,
 }
 ```
@@ -71,16 +75,34 @@ require("nvim-tree").setup({
 })
 ```
 
+## Configuration
+
+```lua
+require("nvim-tree-crossclip").setup({
+  -- When true (default), selections persist across sessions and decorations are restored.
+  -- When false, session selections are removed on exit and no decorations are restored.
+  persistent_clipboard = true,
+
+  -- Optional path to the clipboard JSON file. Defaults to
+  -- stdpath("state") .. "/nvim_tree_crossclip_clipboard.json"
+  -- You can store it elsewhere, e.g. per-project or in a shared location.
+  -- clipboard_path = vim.fn.stdpath("state") .. "/my_crossclip.json",
+})
+```
+
 ## API
 
 - `require("nvim-tree-crossclip").setup()`
 - `require("nvim-tree-crossclip").copy_toggle()`
 - `require("nvim-tree-crossclip").cut_toggle()`
 - `require("nvim-tree-crossclip").paste()`
+- `:NvimTreeCrossClip` — show current external clipboard contents
+- `:NvimTreeCrossClipClear` — clear the external clipboard and nvim-tree marks
 
 ## How it works
 
-- Clipboard file: `${stdpath("state")}/nvim_tree_clipboard.json`
+- Clipboard file: `${stdpath("state")}/nvim_tree_crossclip_clipboard.json`
+  (configurable)
 - The file stores two arrays: `copy` and `cut`, and a timestamp.
 - A filesystem watcher updates the in-memory session clipboard when the file
   changes.
@@ -103,4 +125,26 @@ generated:
 ```vim
 :helptags ALL
 :h nvim-tree-crossclip
+```
+
+### Styling
+
+CrossClip uses dedicated highlight groups for its floating window:
+
+```vim
+" Transparent background for the float window
+hi NvimTreeCrossClipWindow guibg=NONE
+
+" Transparent border background
+hi NvimTreeCrossClipBorder guibg=NONE
+
+" White title, no background
+hi NvimTreeCrossClipTitle guifg=#ffffff guibg=NONE gui=bold
+```
+
+They are applied via window-local `winhl` as:
+
+```lua
+vim.api.nvim_win_set_option(win, "winhl", "Normal:NvimTreeCrossClipWindow,FloatBorder:NvimTreeCrossClipBorder,FloatTitle:NvimTreeCrossClipTitle")
+vim.api.nvim_win_set_option(win, "winblend", 0)
 ```

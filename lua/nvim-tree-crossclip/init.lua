@@ -2,9 +2,12 @@ local M = {}
 
 local api = require("nvim-tree.api")
 local uv = vim.loop or vim.uv
+local config = require("nvim-tree-crossclip.config")
+local clipboard = require("nvim-tree-crossclip.clipboard")
+local util = require("nvim-tree-crossclip.util")
+local ui = require("nvim-tree-crossclip.ui")
 
-local state_dir = vim.fn.stdpath("state")
-local clipboard_file = state_dir .. "/nvim_tree_clipboard.json"
+local clipboard_file = nil
 
 local function notify(msg, level)
 	vim.notify("nvim-tree: " .. msg, level or vim.log.levels.INFO)
@@ -13,40 +16,78 @@ end
 local session_clip = { copy = {}, cut = {} }
 local clip_watcher
 
-local function read_external_clipboard()
-	if vim.fn.filereadable(clipboard_file) == 0 then
-		return nil
+local function list_has_path(node_list, path)
+	if not node_list or #node_list == 0 then
+		return false
 	end
-	local ok, decoded = pcall(function()
-		local lines = vim.fn.readfile(clipboard_file)
-		return vim.json.decode(table.concat(lines, "\n"))
-	end)
-	if not ok then
-		return nil
+	for _, n in ipairs(node_list) do
+		if n and n.absolute_path == path then
+			return true
+		end
 	end
-	return decoded
+	return false
 end
 
-local function write_external_clipboard_full(payload)
-	payload.ts = os.time()
-	local ok, encoded = pcall(vim.json.encode, payload)
-	if not ok then
-		notify("failed to encode clipboard payload", vim.log.levels.ERROR)
+local function restore_decorations()
+	local core_ok, core = pcall(require, "nvim-tree.core")
+	if not core_ok then
 		return
 	end
-	vim.fn.mkdir(state_dir, "p")
-	vim.fn.writefile({ encoded }, clipboard_file)
-end
-
-local function read_or_default_clipboard()
-	local clip = read_external_clipboard()
-	if not clip or type(clip) ~= "table" then
-		clip = { copy = {}, cut = {} }
-	else
-		clip.copy = clip.copy or {}
-		clip.cut = clip.cut or {}
+	local explorer = core.get_explorer()
+	if not explorer then
+		return
 	end
-	return clip
+	local clip = clipboard.read_or_default()
+	if (not clip.copy or #clip.copy == 0) and (not clip.cut or #clip.cut == 0) then
+		return
+	end
+	local copy_set, cut_set = {}, {}
+	for _, p in ipairs(clip.copy or {}) do
+		copy_set[p] = true
+	end
+	for _, p in ipairs(clip.cut or {}) do
+		cut_set[p] = true
+	end
+
+	local to_add_copy, to_add_cut = {}, {}
+
+	local function visit(node)
+		if not node then
+			return
+		end
+		local path = node.absolute_path
+		if path then
+			if copy_set[path] and not list_has_path(explorer.clipboard.data.copy, path) then
+				table.insert(to_add_copy, node)
+			end
+			if cut_set[path] and not list_has_path(explorer.clipboard.data.cut, path) then
+				table.insert(to_add_cut, node)
+			end
+		end
+		if node.group_next then
+			visit(node.group_next)
+		end
+		if node.nodes then
+			for _, child in ipairs(node.nodes) do
+				visit(child)
+			end
+		end
+	end
+
+	visit(explorer)
+
+	local changed = false
+	for _, n in ipairs(to_add_copy) do
+		changed = true
+		table.insert(explorer.clipboard.data.copy, n)
+	end
+	for _, n in ipairs(to_add_cut) do
+		changed = true
+		table.insert(explorer.clipboard.data.cut, n)
+	end
+	if changed then
+		explorer.renderer:draw()
+	end
 end
 
 local function toggle_in_list(list, value)
@@ -67,7 +108,7 @@ function M.copy_toggle()
 		return
 	end
 	require("nvim-tree.api").fs.copy.node(node)
-	local clip = read_or_default_clipboard()
+	local clip = clipboard.read_or_default()
 	for i = #clip.cut, 1, -1 do
 		if clip.cut[i] == node.absolute_path then
 			table.remove(clip.cut, i)
@@ -83,7 +124,7 @@ function M.copy_toggle()
 	else
 		toggle_in_list(session_clip.copy, node.absolute_path)
 	end
-	write_external_clipboard_full(clip)
+	clipboard.write(clip, { notify_on_error = true })
 	notify((added and "added " or "removed ") .. node.name .. " to copy set")
 end
 
@@ -94,7 +135,7 @@ function M.cut_toggle()
 		return
 	end
 	require("nvim-tree.api").fs.cut(node)
-	local clip = read_or_default_clipboard()
+	local clip = clipboard.read_or_default()
 	for i = #clip.copy, 1, -1 do
 		if clip.copy[i] == node.absolute_path then
 			table.remove(clip.copy, i)
@@ -110,30 +151,26 @@ function M.cut_toggle()
 	else
 		toggle_in_list(session_clip.cut, node.absolute_path)
 	end
-	write_external_clipboard_full(clip)
+	clipboard.write(clip, { notify_on_error = true })
 	notify((added and "added " or "removed ") .. node.name .. " to cut set")
 end
 
-local function join_path(dir, name)
-	if dir:sub(-1) == "/" then
-		return dir .. name
-	end
-	return dir .. "/" .. name
+function M.show_state()
+	ui.show()
 end
 
-local function exec_cmd(args)
-	if vim.system then
-		local result = vim.system(args, { text = true }):wait()
-		return result.code == 0, result.stdout, result.stderr
-	else
-		local cmd = table.concat(vim.tbl_map(vim.fn.shellescape, args), " ")
-		local out = vim.fn.system(cmd)
-		return vim.v.shell_error == 0, out, out
-	end
+function M.clear()
+	local cleared = { copy = {}, cut = {} }
+	clipboard.write(cleared, { notify_on_error = true })
+	pcall(function()
+		require("nvim-tree.api").fs.clear_clipboard()
+	end)
+	session_clip.copy, session_clip.cut = {}, {}
+	notify("external clipboard cleared")
 end
 
 function M.paste()
-	local clip = read_external_clipboard()
+	local clip = clipboard.read()
 	if not clip then
 		notify("external clipboard empty", vim.log.levels.WARN)
 		return
@@ -161,21 +198,21 @@ function M.paste()
 	local errors = {}
 	for _, src in ipairs(items) do
 		local base = vim.fn.fnamemodify(src, ":t")
-		local target = join_path(dest_dir, base)
+		local target = util.join_path(dest_dir, base)
 		local ok, _, err
 		if mode == "cut" then
-			ok, _, err = exec_cmd({ "mv", src, target })
+			ok, _, err = util.exec_cmd({ "mv", src, target })
 		else
-			ok, _, err = exec_cmd({ "cp", "-R", "-n", src, target })
+			ok, _, err = util.exec_cmd({ "cp", "-R", "-n", src, target })
 		end
 		if not ok then
 			local cleaned = (err or ""):gsub("\n$", "")
 			table.insert(errors, cleaned)
 		end
 	end
-	local new_clip = read_or_default_clipboard()
+	local new_clip = clipboard.read_or_default()
 	new_clip[mode] = {}
-	write_external_clipboard_full(new_clip)
+	clipboard.write(new_clip, { notify_on_error = true })
 	if #errors > 0 then
 		notify("paste completed with errors: " .. errors[1], vim.log.levels.ERROR)
 	else
@@ -192,15 +229,20 @@ local function start_clipboard_watcher()
 	if not clip_watcher then
 		return
 	end
-	clip_watcher:start(state_dir, {}, function(err, filename, _)
+	if not clipboard_file or clipboard_file == "" then
+		return
+	end
+	local watch_dir = vim.fn.fnamemodify(clipboard_file, ":h")
+	local watch_name = vim.fn.fnamemodify(clipboard_file, ":t")
+	clip_watcher:start(watch_dir, {}, function(err, filename, _)
 		if err then
 			return
 		end
-		if filename ~= vim.fn.fnamemodify(clipboard_file, ":t") then
+		if filename ~= watch_name then
 			return
 		end
 		vim.schedule(function()
-			local c = read_or_default_clipboard()
+			local c = clipboard.read_or_default()
 			if #c.copy == 0 and #c.cut == 0 then
 				pcall(function()
 					require("nvim-tree.api").fs.clear_clipboard()
@@ -211,30 +253,42 @@ local function start_clipboard_watcher()
 	end)
 end
 
-function M.setup()
+function M.setup(opts)
+	config.setup(opts)
+	clipboard_file = config.get().clipboard_path
 	start_clipboard_watcher()
+	if config.get().persistent_clipboard then
+		-- restore clipboard-based decorations whenever the tree renders
+		pcall(function()
+			api.events.subscribe(api.events.Event.TreeRendered, function()
+				vim.schedule(restore_decorations)
+			end)
+		end)
+	end
 	vim.api.nvim_create_autocmd("VimLeavePre", {
 		callback = function()
-			local clip = read_or_default_clipboard()
-			local function subtract(from_list, remove_list)
-				if not from_list or #from_list == 0 then
-					return {}
-				end
-				local remove_set = {}
-				for _, p in ipairs(remove_list or {}) do
-					remove_set[p] = true
-				end
-				local out = {}
-				for _, p in ipairs(from_list) do
-					if not remove_set[p] then
-						table.insert(out, p)
+			if not config.get().persistent_clipboard then
+				local clip = clipboard.read_or_default()
+				local function subtract(from_list, remove_list)
+					if not from_list or #from_list == 0 then
+						return {}
 					end
+					local remove_set = {}
+					for _, p in ipairs(remove_list or {}) do
+						remove_set[p] = true
+					end
+					local out = {}
+					for _, p in ipairs(from_list) do
+						if not remove_set[p] then
+							table.insert(out, p)
+						end
+					end
+					return out
 				end
-				return out
+				clip.copy = subtract(clip.copy, session_clip.copy)
+				clip.cut = subtract(clip.cut, session_clip.cut)
+				clipboard.write(clip, { notify_on_error = true })
 			end
-			clip.copy = subtract(clip.copy, session_clip.copy)
-			clip.cut = subtract(clip.cut, session_clip.cut)
-			write_external_clipboard_full(clip)
 			if clip_watcher and clip_watcher.stop then
 				pcall(function()
 					clip_watcher:stop()
@@ -242,6 +296,17 @@ function M.setup()
 			end
 		end,
 	})
+
+	-- user commands
+	pcall(vim.api.nvim_del_user_command, "NvimTreeCrossClipShow")
+	pcall(vim.api.nvim_del_user_command, "NvimTreeCrossClip")
+	pcall(vim.api.nvim_del_user_command, "NvimTreeCrossClipClear")
+	vim.api.nvim_create_user_command("NvimTreeCrossClip", function()
+		M.show_state()
+	end, {})
+	vim.api.nvim_create_user_command("NvimTreeCrossClipClear", function()
+		M.clear()
+	end, {})
 end
 
 return M
