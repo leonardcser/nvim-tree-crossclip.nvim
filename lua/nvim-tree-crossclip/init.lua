@@ -213,6 +213,14 @@ function M.paste()
 	local new_clip = clipboard.read_or_default()
 	new_clip[mode] = {}
 	clipboard.write(new_clip, { notify_on_error = true })
+	-- proactively clear nvim-tree clipboard decorations when clipboard is now empty
+	pcall(function()
+		local is_empty = (not new_clip.copy or #new_clip.copy == 0) and (not new_clip.cut or #new_clip.cut == 0)
+		if is_empty then
+			require("nvim-tree.api").fs.clear_clipboard()
+			session_clip.copy, session_clip.cut = {}, {}
+		end
+	end)
 	if #errors > 0 then
 		notify("paste completed with errors: " .. errors[1], vim.log.levels.ERROR)
 	else
