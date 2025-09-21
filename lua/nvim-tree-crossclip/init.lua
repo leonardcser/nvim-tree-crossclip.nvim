@@ -107,7 +107,13 @@ function M.copy_toggle()
 		notify("nothing to copy", vim.log.levels.WARN)
 		return
 	end
-	require("nvim-tree.api").fs.copy.node(node)
+	local ok, err = pcall(function()
+		require("nvim-tree.api").fs.copy.node(node)
+	end)
+	if not ok then
+		notify("copy failed: " .. tostring(err), vim.log.levels.ERROR)
+		return
+	end
 	local clip = clipboard.read_or_default()
 	for i = #clip.cut, 1, -1 do
 		if clip.cut[i] == node.absolute_path then
@@ -134,7 +140,13 @@ function M.cut_toggle()
 		notify("nothing to cut", vim.log.levels.WARN)
 		return
 	end
-	require("nvim-tree.api").fs.cut(node)
+	local ok, err = pcall(function()
+		require("nvim-tree.api").fs.cut(node)
+	end)
+	if not ok then
+		notify("cut failed: " .. tostring(err), vim.log.levels.ERROR)
+		return
+	end
 	local clip = clipboard.read_or_default()
 	for i = #clip.copy, 1, -1 do
 		if clip.copy[i] == node.absolute_path then
