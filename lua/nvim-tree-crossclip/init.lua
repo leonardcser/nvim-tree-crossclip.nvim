@@ -211,9 +211,21 @@ function M.paste()
 	for _, src in ipairs(items) do
 		local base = vim.fn.fnamemodify(src, ":t")
 		local target = util.join_path(dest_dir, base)
+		local counter = 1
+		while (vim.fn.filereadable(target) == 1 or vim.fn.isdirectory(target) == 1) and counter < 100 do
+			local name = vim.fn.fnamemodify(base, ":r")
+			local ext = vim.fn.fnamemodify(base, ":e")
+			if ext ~= "" then
+				ext = "." .. ext
+			end
+			local suffix = "_copy" .. counter
+			base = name .. suffix .. ext
+			target = util.join_path(dest_dir, base)
+			counter = counter + 1
+		end
 		local ok, _, err
 		if mode == "cut" then
-			ok, _, err = util.exec_cmd({ "mv", src, target })
+			ok, _, err = util.exec_cmd({ "mv", "-n", src, target })
 		else
 			ok, _, err = util.exec_cmd({ "cp", "-R", "-n", src, target })
 		end
