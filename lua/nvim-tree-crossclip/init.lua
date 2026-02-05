@@ -213,14 +213,7 @@ function M.paste()
 		local target = util.join_path(dest_dir, base)
 		local counter = 1
 		while (vim.fn.filereadable(target) == 1 or vim.fn.isdirectory(target) == 1) and counter < 100 do
-			local name = vim.fn.fnamemodify(base, ":r")
-			local ext = vim.fn.fnamemodify(base, ":e")
-			if ext ~= "" then
-				ext = "." .. ext
-			end
-			local suffix = "_copy" .. counter
-			base = name .. suffix .. ext
-			target = util.join_path(dest_dir, base)
+			target = util.join_path(dest_dir, base .. "." .. counter)
 			counter = counter + 1
 		end
 		local ok, _, err
