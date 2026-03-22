@@ -2,12 +2,15 @@ local M = {}
 
 local config = require("nvim-tree-crossclip.config")
 
+local ttl_timer = nil
+
 local function get_path()
 	return config.get().clipboard_path
 end
 
 function M.read()
-	local path = get_path()
+	local cfg = config.get()
+	local path = cfg.clipboard_path
 	if not path or path == "" then
 		return nil
 	end
@@ -19,6 +22,10 @@ function M.read()
 		return vim.json.decode(table.concat(lines, "\n"))
 	end)
 	if not ok then
+		return nil
+	end
+	local ttl = cfg.ttl or 0
+	if ttl > 0 and decoded.ts and (os.time() - decoded.ts) > ttl then
 		return nil
 	end
 	return decoded
@@ -35,9 +42,38 @@ function M.read_or_default()
 	return clip
 end
 
+M.on_expire = nil
+
+local function schedule_ttl_timer()
+	if ttl_timer then
+		ttl_timer:stop()
+		ttl_timer:close()
+		ttl_timer = nil
+	end
+	local ttl = config.get().ttl or 0
+	if ttl <= 0 then
+		return
+	end
+	ttl_timer = vim.uv.new_timer()
+	ttl_timer:start(ttl * 1000, 0, vim.schedule_wrap(function()
+		ttl_timer:close()
+		ttl_timer = nil
+		local clip = M.read()
+		if clip then
+			return
+		end
+		if vim.fn.filereadable(get_path()) == 1 then
+			M.write({ copy = {}, cut = {} })
+		end
+		if M.on_expire then
+			M.on_expire()
+		end
+	end))
+end
+
 function M.write(payload, opts)
 	local options = opts or {}
-	payload.ts = os.time()
+	payload = vim.tbl_extend("force", payload, { ts = os.time() })
 	local ok, encoded = pcall(vim.json.encode, payload)
 	if not ok then
 		if options.notify_on_error then
@@ -51,6 +87,10 @@ function M.write(payload, opts)
 	end
 	vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
 	vim.fn.writefile({ encoded }, path)
+	local has_items = (payload.copy and #payload.copy > 0) or (payload.cut and #payload.cut > 0)
+	if has_items then
+		schedule_ttl_timer()
+	end
 end
 
 function M.path()

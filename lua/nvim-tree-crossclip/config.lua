@@ -4,6 +4,7 @@ M._opts = {
 	persistent_clipboard = true,
 	-- default set in setup using stdpath('state')
 	clipboard_path = nil,
+	ttl = 900,
 }
 
 function M.setup(opts)

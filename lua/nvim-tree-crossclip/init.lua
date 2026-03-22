@@ -16,6 +16,13 @@ end
 local session_clip = { copy = {}, cut = {} }
 local clip_watcher
 
+local function clear_tree_clipboard()
+	pcall(function()
+		require("nvim-tree.api").fs.clear_clipboard()
+	end)
+	session_clip.copy, session_clip.cut = {}, {}
+end
+
 local function list_has_path(node_list, path)
 	if not node_list or #node_list == 0 then
 		return false
@@ -174,10 +181,7 @@ end
 function M.clear()
 	local cleared = { copy = {}, cut = {} }
 	clipboard.write(cleared, { notify_on_error = true })
-	pcall(function()
-		require("nvim-tree.api").fs.clear_clipboard()
-	end)
-	session_clip.copy, session_clip.cut = {}, {}
+	clear_tree_clipboard()
 	notify("external clipboard cleared")
 end
 
@@ -231,13 +235,10 @@ function M.paste()
 	new_clip[mode] = {}
 	clipboard.write(new_clip, { notify_on_error = true })
 	-- proactively clear nvim-tree clipboard decorations when clipboard is now empty
-	pcall(function()
-		local is_empty = (not new_clip.copy or #new_clip.copy == 0) and (not new_clip.cut or #new_clip.cut == 0)
-		if is_empty then
-			require("nvim-tree.api").fs.clear_clipboard()
-			session_clip.copy, session_clip.cut = {}, {}
-		end
-	end)
+	local is_empty = (not new_clip.copy or #new_clip.copy == 0) and (not new_clip.cut or #new_clip.cut == 0)
+	if is_empty then
+		clear_tree_clipboard()
+	end
 	if #errors > 0 then
 		notify("paste completed with errors: " .. errors[1], vim.log.levels.ERROR)
 	else
@@ -269,10 +270,7 @@ local function start_clipboard_watcher()
 		vim.schedule(function()
 			local c = clipboard.read_or_default()
 			if #c.copy == 0 and #c.cut == 0 then
-				pcall(function()
-					require("nvim-tree.api").fs.clear_clipboard()
-				end)
-				session_clip.copy, session_clip.cut = {}, {}
+				clear_tree_clipboard()
 			end
 		end)
 	end)
@@ -281,6 +279,10 @@ end
 function M.setup(opts)
 	config.setup(opts)
 	clipboard_file = config.get().clipboard_path
+	clipboard.on_expire = function()
+		clear_tree_clipboard()
+		notify("clipboard expired")
+	end
 	start_clipboard_watcher()
 	if config.get().persistent_clipboard then
 		-- restore clipboard-based decorations whenever the tree renders
